@@ -75,7 +75,7 @@ class GoogleReviewsWidget extends HTMLElement {
         }
 
         .reviews-list {
-          max-width: 700px;
+          max-width: 931px;
           margin: 0 auto;
           display: flex;
           flex-direction: column;
