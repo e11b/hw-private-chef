@@ -1,0 +1,192 @@
+class GoogleReviewsWidget extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+
+    const PINNED = ['Laura', 'Anna', 'Anneka'];
+    const DATA_URL = 'https://e11b.github.io/hw-private-chef/reviews.json';
+
+    const starSVG = `<svg class="star-icon" viewBox="0 0 24 24" fill="#FBBC04" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+    </svg>`;
+
+    const googleGSVG = `<svg class="google-g" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="grd-br" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0%" stop-color="#0cba65"/>
+          <stop offset="50%" stop-color="#0aa6a9"/>
+          <stop offset="100%" stop-color="#3086ff"/>
+        </linearGradient>
+        <linearGradient id="grd-tr" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#ff4540"/>
+          <stop offset="50%" stop-color="#ff8a1b"/>
+          <stop offset="100%" stop-color="#ffcd0a"/>
+        </linearGradient>
+      </defs>
+      <path d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z" fill="url(#grd-br)"/>
+      <path d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z" fill="#ff4540"/>
+      <path d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0124 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z" fill="#0cba65"/>
+      <path d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 01-4.087 5.571l.001-.001 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z" fill="#3086ff"/>
+      <path d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z" fill="url(#grd-tr)"/>
+    </svg>`;
+
+    function dateToSortValue(dateStr) {
+      const s = dateStr.toLowerCase();
+      const num = parseInt(s) || 1;
+      if (s.includes('week')) return num * 7;
+      if (s.includes('month')) return num * 30;
+      if (s.includes('year')) return num * 365;
+      if (s.includes('day')) return num;
+      return 9999;
+    }
+
+    function buildCard(r) {
+      const initial = r.name.charAt(0).toUpperCase();
+      const avatarHTML = r.thumbnail
+        ? `<img class="reviewer-avatar" src="${r.thumbnail}" alt="${r.name}" onerror="this.outerHTML='<div class=&quot;avatar-placeholder&quot;>${initial}</div>'">`
+        : `<div class="avatar-placeholder">${initial}</div>`;
+      const starsHTML = Array(r.rating).fill(starSVG).join('');
+      const displayName = r.lastInitial ? `${r.name} ${r.lastInitial}.` : r.name;
+
+      return `
+        <div class="review-card">
+          <div class="card-header">
+            <div class="reviewer-info">
+              ${avatarHTML}
+              <div class="reviewer-name-stars">
+                <span class="reviewer-name">${displayName}</span>
+                <div class="stars">${starsHTML}</div>
+              </div>
+            </div>
+            ${googleGSVG}
+          </div>
+          <div class="review-text">${r.text}</div>
+        </div>`;
+    }
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@200;400;500;600;700&display=swap');
+
+        :host {
+          display: block;
+          font-family: 'Poppins', sans-serif;
+          color: #2B2B2B;
+        }
+
+        .reviews-list {
+          max-width: 700px;
+          margin: 0 auto;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .review-card {
+          background: #ffffff;
+          border: 1px solid #e0e0e0;
+          border-radius: 16px;
+          padding: 13px 16px;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .card-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 8px;
+        }
+
+        .reviewer-info {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .reviewer-name-stars {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .reviewer-avatar {
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          object-fit: cover;
+          flex-shrink: 0;
+        }
+
+        .avatar-placeholder {
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          background: #5f6368;
+          color: #fff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 15px;
+          font-weight: 600;
+          flex-shrink: 0;
+        }
+
+        .reviewer-name {
+          font-size: 16px;
+          font-weight: 700;
+          color: #2B2B2B;
+          line-height: 1.2;
+          margin-left: 3px;
+        }
+
+        .google-g {
+          width: 30px;
+          height: 30px;
+          flex-shrink: 0;
+        }
+
+        .stars {
+          display: flex;
+          gap: 1px;
+        }
+
+        .star-icon {
+          width: 16px;
+          height: 16px;
+        }
+
+        .review-text {
+          font-size: 14px;
+          font-weight: 200;
+          line-height: 1.55;
+          color: #2B2B2B;
+        }
+      </style>
+      <div class="reviews-list" id="reviewsList"></div>
+    `;
+
+    fetch(DATA_URL)
+      .then(res => res.json())
+      .then(data => {
+        const fiveStars = data.filter(r => r.rating === 5);
+        const pinned = [];
+        const rest = [];
+
+        for (const name of PINNED) {
+          const found = fiveStars.find(r => r.name === name);
+          if (found) pinned.push(found);
+        }
+        for (const r of fiveStars) {
+          if (!PINNED.includes(r.name)) rest.push(r);
+        }
+        rest.sort((a, b) => dateToSortValue(a.date) - dateToSortValue(b.date));
+
+        const sorted = [...pinned, ...rest];
+        const list = this.shadowRoot.getElementById('reviewsList');
+        list.innerHTML = sorted.map(r => buildCard(r)).join('');
+      });
+  }
+}
+
+customElements.define('google-reviews-widget', GoogleReviewsWidget);
