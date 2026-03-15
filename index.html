@@ -170,9 +170,10 @@
       card.className = 'review-card';
 
       const initial = r.name.charAt(0).toUpperCase();
+      const colorStyle = r.avatarColor ? ` style="background:${r.avatarColor}"` : '';
       const avatarHTML = r.thumbnail
-        ? `<img class="reviewer-avatar" src="${r.thumbnail}" alt="${r.name}" onerror="this.outerHTML='<div class=\\'avatar-placeholder\\'>${initial}</div>'">`
-        : `<div class="avatar-placeholder">${initial}</div>`;
+        ? `<img class="reviewer-avatar" src="${r.thumbnail}" alt="${r.name}" onerror="this.outerHTML='<div class=\\'avatar-placeholder\\'${colorStyle.replace(/'/g, "\\\\'")}>${initial}</div>'">`
+        : `<div class="avatar-placeholder"${colorStyle}>${initial}</div>`;
 
       const starsHTML = Array(r.rating).fill(starSVG).join('');
 

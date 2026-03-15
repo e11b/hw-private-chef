@@ -182,5 +182,22 @@
     "text": "Professional, flexible, provides great service that is really high-end!",
     "date": "a year ago",
     "thumbnail": "https://lh3.googleusercontent.com/a-/ALV-UjVsHh0BdD829Wp3lyRK0uOcbN6auWppSbXyciXcC_aS5JR-2tE_=s64-c-rp-mo-br100"
+  },
+  {
+    "name": "Avital",
+    "lastInitial": "S",
+    "rating": 5,
+    "text": "For anyone looking for a Michelin-trained chef who can whip up amazing, tailored meals for your family, I highly recommend Chef Haley. She's truly incredible, and her services have been a game changer for us!",
+    "date": "",
+    "thumbnail": "",
+    "avatarColor": "#6B3A2A"
+  },
+  {
+    "name": "Sam",
+    "lastInitial": "A",
+    "rating": 5,
+    "text": "We have been very happy with the set up so far and it's really reduced a lot of headache for me! I appreciate all the time Haley takes for us to make sure we get delicious meals every week!",
+    "date": "",
+    "thumbnail": ""
   }
 ]

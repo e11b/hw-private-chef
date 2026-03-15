@@ -42,9 +42,10 @@ class GoogleReviewsWidget extends HTMLElement {
 
     function buildCard(r) {
       const initial = r.name.charAt(0).toUpperCase();
+      const colorStyle = r.avatarColor ? ` style="background:${r.avatarColor}"` : '';
       const avatarHTML = r.thumbnail
-        ? `<img class="reviewer-avatar" src="${r.thumbnail}" alt="${r.name}" onerror="this.outerHTML='<div class=&quot;avatar-placeholder&quot;>${initial}</div>'">`
-        : `<div class="avatar-placeholder">${initial}</div>`;
+        ? `<img class="reviewer-avatar" src="${r.thumbnail}" alt="${r.name}" onerror="this.outerHTML='<div class=&quot;avatar-placeholder&quot;${colorStyle.replace(/"/g, '&quot;')}>${initial}</div>'">`
+        : `<div class="avatar-placeholder"${colorStyle}>${initial}</div>`;
       const starsHTML = Array(r.rating).fill(starSVG).join('');
       const displayName = r.lastInitial ? `${r.name} ${r.lastInitial}.` : r.name;
 

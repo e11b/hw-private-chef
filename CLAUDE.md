@@ -15,7 +15,7 @@ Embeddable Google Reviews widget for [haleywexler.com](https://haleywexler.com) 
 |------|---------|
 | `index.html` | Standalone widget UI (local dev/preview) |
 | `reviews-widget.js` | Web Component for Wix Custom Element embed |
-| `reviews.json` | Static review data (23 five-star reviews) |
+| `reviews.json` | Static review data (23 Google + 2 manual five-star reviews) |
 | `fetch-reviews.js` | Node.js script to fetch reviews from SearchAPI.io |
 | `.github/workflows/fetch-reviews.yml` | Monthly cron to refresh reviews |
 | `.env` | Local API key (gitignored) |
@@ -49,6 +49,11 @@ Embeddable Google Reviews widget for [haleywexler.com](https://haleywexler.com) 
 - Name + stars nested vertically (2px gap), left-aligned with 3px margin offset
 - Google G logo (30px, 2025 gradient design) right-aligned, vertically centered
 - Stars: Material Design filled star, 16px, #FBBC04
+
+### Manual Reviews
+- Reviews not from Google can be added directly to `reviews.json` with empty `thumbnail` and `date` fields
+- Optional `avatarColor` field overrides the default gray (`#5f6368`) placeholder circle
+- Empty dates sort to the end (after all Google reviews)
 
 ### Assets (inline SVG)
 - **Stars:** Material Design filled star path
