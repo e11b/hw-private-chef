@@ -21,15 +21,20 @@ Infrastructure for [haleywexler.com](https://haleywexler.com) (Wix Premium site)
 | `reviews.json` | Static review data (23 Google + 2 manual five-star reviews) |
 | `fetch-reviews.js` | Node.js script to fetch reviews from SearchAPI.io |
 | `api/new-client.js` | Vercel serverless: Wix "become a client" form -> Notion |
+| `api/client-onboarding.js` | Vercel serverless: Wix onboarding form -> updates Notion entry |
 | `.github/workflows/fetch-reviews.yml` | Monthly cron to refresh reviews |
 | `.env` | Local env vars (gitignored) |
 
 ## Wix-to-Notion Integration
 
 ### How It Works
-1. Client submits a form on haleywexler.com
-2. Wix Automation triggers "Send HTTP request" (POST) to Vercel endpoint
-3. Vercel function parses the Wix payload and creates/updates a Notion database entry
+1. Client submits Form 1 ("become a client") on haleywexler.com
+2. Wix Automation POSTs to Vercel endpoint `/api/new-client`
+3. Endpoint creates a new row in Notion "Client Files" database (prefixed with "New*")
+4. Haley contacts client, sends them the onboarding form link
+5. Client submits Form 2 ("client onboarding") - hidden page, URL access only
+6. Wix Automation POSTs to Vercel endpoint `/api/client-onboarding`
+7. Endpoint searches Notion by email, updates existing entry with onboarding details, creates two sub-pages (Preferences + Pantry)
 
 ### Wix Payload Format
 Wix sends form data as `data.submissions` array of `{label, value}` objects:
@@ -44,33 +49,117 @@ Wix sends form data as `data.submissions` array of `{label, value}` objects:
   }
 }
 ```
-The `getField(submissions, label)` helper extracts values by matching the label string exactly as it appears in the Wix form builder.
+
+**Key behaviors:**
+- `getField(submissions, label)` extracts values by matching the label string (trimmed) exactly as it appears in the Wix form builder
+- Individual checkboxes (pantry items, kitchen tools) come as separate entries with `value: "Checked"`
+- Multi-select checkboxes (menu picks) come as ONE entry with all values comma-joined into a single string
+- Some Wix labels have trailing spaces - always `.trim()` before comparing
 
 ### Form 1: "become a client" (new-client-form)
 - **Wix form URL:** https://www.haleywexler.com/new-client-form
 - **Endpoint:** `POST https://hw-private-chef.vercel.app/api/new-client`
 - **Action:** Creates a new row in the Notion "Client Files" database
+- **Name prefix:** All new entries are prefixed with "New*" (e.g., "New* Jane Doe") so Haley can identify new clients at a glance
 
 **Field mapping:**
 
 | Wix Form Label | Notion Target | Format |
 |---------------|---------------|--------|
-| Name | Name column (title) | As-is |
+| Name | Name column (title) | "New* [full name]" |
 | Email | Email column | As-is |
 | Phone | Page body | **[FirstName]'s Cell:** (xxx) xxx-xxxx (strips +1) |
 | How did you hear about me? | Page body | **How did you hear about me?** [response] |
 | Provide a brief overview... | Page body | **Brief overview:** [response] |
 
-### Form 2: "client onboarding" (client-onboarding) - NOT YET BUILT
-- **Wix form URL:** https://www.haleywexler.com/client-onboarding
+### Form 2: "client onboarding" (client-onboarding)
+- **Wix form URL:** https://www.haleywexler.com/client-onboarding (hidden page, URL access only)
 - **Endpoint:** `POST https://hw-private-chef.vercel.app/api/client-onboarding`
-- **Action:** Searches Notion "Client Files" by email, updates existing row
-- **Fields:** Package, grocery delivery address, delivery handling, pantry level, pantry items (19 checkboxes), kitchen tools (8 checkboxes), family size, allergies, favorite foods, consistent weekly meal, food preferences, first week menu picks
+- **Matching:** Searches Notion "Client Files" by email to find existing Form 1 entry
+- **Fallback:** If no email match found, creates a new entry (prefixed with "New*")
+
+**What Form 2 does to the client's Notion page:**
+
+1. **Updates DB columns:** Address, Family Size, Allergies
+2. **Appends to main page body** (right after Brief Overview from Form 1):
+   - **Package:** [selected package]
+   - **Grocery delivery:** [delivery preference]
+3. **Creates sub-page: ❤️ [FirstName]'s Preferences** containing:
+   - **Allergies:** [response]
+   - **Dislikes/Avoid:** [swap/avoid response]
+   - **Favorite Foods/More of:** [response]
+   - **Want consistently each week:** [response]
+   - **Eating/Food Preferences:** [response]
+4. **Creates sub-page: 🍴 [FirstName]'s Pantry** containing:
+   - **Pantry level:** [Bare Bones / Basic Staples / Fully Stocked]
+   - **Pantry Items** (H3 header) with **In Stock:** and **Needs:** bullet lists
+   - **Kitchen Items** (H3 header) with **In Stock:** and **Needs:** bullet lists
+5. **Appends to main page body** (after sub-pages):
+   - **First week's menu choices:** with Notion bullet points for each meal
+
+**Sub-page names use the real first name** (not "New*"). The "New*" prefix is only on the database row Name column.
+
+**Resulting page structure after both forms:**
+```
+New* Jane Doe (Name column)
+├── Jane's Cell: (212) 555-1234          (Form 1)
+├── How did you hear about me? Instagram  (Form 1)
+├── Brief overview: Looking for...        (Form 1)
+├── Package: small package (1-2 people)   (Form 2)
+├── Grocery delivery: Deliver to front... (Form 2)
+├── ❤️ Jane's Preferences                (Form 2 sub-page)
+├── 🍴 Jane's Pantry                     (Form 2 sub-page)
+└── First week's menu choices:            (Form 2)
+    • Lemon Honey Salmon...
+    • Miso Shrimp...
+    • Beef and Black Bean Chili...
+```
+
+**Form 2 field mapping detail:**
+
+| Wix Form Label | Destination | Notes |
+|---------------|-------------|-------|
+| Name | Match key / fallback create | |
+| Email | Match key (search by email) | |
+| Single choice | Main body | Cleaned label: "Package" |
+| Grocery Delivery Address | Address DB column | |
+| ...handle grocery delivery? | Main body | Cleaned label: "Grocery delivery" |
+| ...describes your pantry... | Pantry sub-page | Cleaned label: "Pantry level" |
+| [Each pantry item] | Pantry sub-page | "Checked" = In Stock, missing = Needs |
+| [Each kitchen tool] | Pantry sub-page | "Checked" = In Stock, missing = Needs |
+| How many people... | Family Size DB column | |
+| Allergies or dietary restrictions | Allergies DB column + Preferences sub-page | |
+| Favorite foods... | Preferences sub-page | "Favorite Foods/More of" |
+| ...consistently each week? | Preferences sub-page | "Want consistently each week" |
+| ...eating and food preferences... | Preferences sub-page | "Eating/Food Preferences" |
+| ...swap from the above menus? | Preferences sub-page | "Dislikes/Avoid" |
+| Please choose 3 meals... | Main body | Bulleted list, split by known meals |
+
+### IMPORTANT: Menu Options Maintenance
+The `MENU_OPTIONS` array in `api/client-onboarding.js` contains the 7 hardcoded meal descriptions from the Wix onboarding form. This is required because Wix joins multiple checkbox selections into one comma-separated string, and each meal description itself contains commas, so simple comma-splitting doesn't work.
+
+**When Haley updates the menu options on the Wix form, you MUST update the `MENU_OPTIONS` array to match.** Otherwise menu picks will appear as one long unformatted string instead of individual bullet points.
+
+Current menu options (as of 03/21/26):
+1. Lemon Honey Salmon, Mini Roasted Potatoes and Greek Salad...
+2. Miso Shrimp with Roasted Broccoli and Sesame Scallion Jasmine Rice
+3. Beef and Black Bean Chili (corn, peppers, onions) Homemade Tortilla Strips...
+4. Steak Taco Bowls - Lime Cumin Skirt Steak, Roasted Peppers and Onions...
+5. Roasted Chicken Breasts (skin-on bone-in) with Brussels Sprout Quinoa Salad...
+6. Maple Dijon Salmon, Roasted Delicata Squash and Side of Herby Couscous
+7. Italian Turkey Meatballs with Red Sauce and Basil, Roasted Asparagus and Spaghetti...
+
+### Checkbox Lists (Pantry + Kitchen Tools)
+The `PANTRY_ITEMS` and `KITCHEN_TOOLS` arrays in `api/client-onboarding.js` define the full list of possible checkbox items. These must match the Wix form exactly. If Haley adds/removes items on the form, update these arrays.
+
+**19 pantry items:** Olive Oil, Avocado Oil, Sesame Oil, Kosher Salt, Eggs, Sesame Seeds, Onion Powder/Garlic Powder/Basic Seasonings, Apple Cider Vinegar, Rice Wine Vinegar, Dijon Mustard, Soy Sauce, Honey, Maple Syrup, Miso, Quinoa, Brown Rice, Jasmine Rice, Breadcrumbs, Nuts
+
+**8 kitchen tools:** Pots and Pans, Large and Medium Tupperware, Sheet Trays, Mixing Bowls and Cutting Boards, Tin Foil, Parchment Paper, Rice Cooker or Instapot, Blender
 
 ### Notion Database
 - **Database:** Client Files (inline in Clients page)
 - **Database ID:** `229f9bcd-7056-809e-bb0f-d35b804efac5`
-- **Integration name:** "Wix Forms" (internal integration)
+- **Integration name:** "Wix Forms" (internal integration, must be connected to the Client Files database via Connections)
 - **Columns:** Name, Email, Phone Number, Address, Family Size, Portion Size, Allergies, Delivery Day, Card
 
 ### Vercel Deployment
@@ -101,12 +190,25 @@ printf '%s' 'value_here' | vercel env add VAR_NAME production
    - Body params: **Entire payload** (sends all fields automatically, no manual mapping needed)
 4. Save and activate
 
+**Current automations:**
+
+| Form | Webhook URL |
+|------|-------------|
+| become a client | `https://hw-private-chef.vercel.app/api/new-client` |
+| client onboarding | `https://hw-private-chef.vercel.app/api/client-onboarding` |
+
 ### Adding a New Form Endpoint
 1. Create `api/<endpoint-name>.js` in the project
-2. Use `getField(submissions, 'Exact Label From Wix')` to extract fields - labels must match exactly
-3. Deploy: `vercel --prod --yes`
-4. Create Wix Automation pointing to `https://hw-private-chef.vercel.app/api/<endpoint-name>`
-5. Use "Entire payload" for body params
+2. Use `getField(submissions, 'Exact Label From Wix')` to extract fields - labels must match exactly (trim whitespace)
+3. For checkbox fields: individual items come as separate entries with `value: "Checked"`; multi-select checkboxes come as one comma-joined string
+4. Deploy: `vercel --prod --yes`
+5. Create Wix Automation pointing to `https://hw-private-chef.vercel.app/api/<endpoint-name>`
+6. Use "Entire payload" for body params
+7. Test by submitting the form, then check `vercel logs` for the raw payload to verify field labels
+
+### Edge Cases
+- **Email mismatch between Form 1 and 2:** If a client uses a different email on the onboarding form, it creates a new entry instead of updating. Haley can manually merge in Notion. Future improvement: match by Notion page ID via personalized onboarding links.
+- **Duplicate onboarding submissions:** Each Form 2 submission appends new sub-pages and body content. If a client submits twice, there will be duplicate Preferences/Pantry sub-pages. Clean up manually in Notion.
 
 ## Google Reviews Widget
 

@@ -82,7 +82,7 @@ module.exports = async (req, res) => {
     await notion.pages.create({
       parent: { database_id: DATABASE_ID },
       properties: {
-        Name: { title: [{ text: { content: name } }] },
+        Name: { title: [{ text: { content: `New* ${name}` } }] },
         Email: { rich_text: [{ text: { content: email } }] },
       },
       children,
