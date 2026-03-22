@@ -175,7 +175,7 @@ class GoogleReviewsWidget extends HTMLElement {
       <div class="reviews-list" id="reviewsList"></div>
     `;
 
-    fetch(DATA_URL)
+    fetch(DATA_URL + '?v=' + Date.now())
       .then(res => res.json())
       .then(data => {
         const fiveStars = data.filter(r => r.rating === 5);
