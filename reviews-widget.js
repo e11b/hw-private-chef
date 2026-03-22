@@ -41,6 +41,7 @@ class GoogleReviewsWidget extends HTMLElement {
     function dateToSortValue(dateStr) {
       const s = dateStr.toLowerCase();
       const num = parseInt(s) || 1;
+      if (s.includes('hour')) return num / 24;
       if (s.includes('week')) return num * 7;
       if (s.includes('month')) return num * 30;
       if (s.includes('year')) return num * 365;
