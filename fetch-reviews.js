@@ -73,13 +73,23 @@ async function fetchAllReviews() {
 
 async function main() {
   try {
-    const reviews = await fetchAllReviews();
-    if (reviews.length === 0) {
+    const googleReviews = await fetchAllReviews();
+    if (googleReviews.length === 0) {
       console.error('No reviews fetched - keeping existing file');
       process.exit(1);
     }
-    fs.writeFileSync('reviews.json', JSON.stringify(reviews, null, 2) + '\n');
-    console.log('reviews.json updated successfully');
+
+    // Preserve manual reviews (marked with manual: true)
+    let manualReviews = [];
+    if (fs.existsSync('reviews.json')) {
+      const existing = JSON.parse(fs.readFileSync('reviews.json', 'utf8'));
+      manualReviews = existing.filter(r => r.manual === true);
+      console.log(`Preserving ${manualReviews.length} manual review(s)`);
+    }
+
+    const allReviews = [...googleReviews, ...manualReviews];
+    fs.writeFileSync('reviews.json', JSON.stringify(allReviews, null, 2) + '\n');
+    console.log(`reviews.json updated: ${googleReviews.length} Google + ${manualReviews.length} manual`);
   } catch (err) {
     console.error('Error:', err.message);
     process.exit(1);
