@@ -243,8 +243,21 @@ printf '%s' 'value_here' | vercel env add VAR_NAME production
 
 #### Manual Reviews
 - Reviews not from Google can be added directly to `reviews.json` with empty `thumbnail` and `date` fields
+- **Must include `"manual": true`** - this flag prevents the monthly Google fetch from deleting them
 - Optional `avatarColor` field overrides the default gray (`#5f6368`) placeholder circle
-- Empty dates sort to the end (after all Google reviews)
+- Empty dates sort to the end (after all Google reviews, sort value 9999)
+
+#### Sort Order (`dateToSortValue`)
+Reviews after the 3 pinned are sorted by recency (lower value = more recent):
+
+| Date string | Sort value | Example |
+|-------------|-----------|---------|
+| X hours ago | X / 24 | "12 hours ago" = 0.5 |
+| X days ago | X | "4 days ago" = 4 |
+| X weeks ago | X * 7 | "3 weeks ago" = 21 |
+| X months ago | X * 30 | "5 months ago" = 150 |
+| X years ago | X * 365 | "a year ago" = 365 |
+| empty string | 9999 | manual reviews (end of list) |
 
 #### Assets (inline SVG)
 - **Stars:** Material Design filled star path
@@ -252,14 +265,43 @@ printf '%s' 'value_here' | vercel env add VAR_NAME production
 
 ### Wix Embed (Custom Element)
 1. Add Elements > Embed Code > Custom Element
-2. Source: Server URL > `https://e11b.github.io/hw-private-chef/reviews-widget.js`
+2. Source: Server URL > `https://e11b.github.io/hw-private-chef/reviews-widget.js?v=4`
 3. Tag Name: `google-reviews-widget`
 4. Height auto-adjusts to content (no fixed height needed)
 
-### Refresh Cycle
-- GitHub Action runs 1st of each month at 8:00 AM UTC
-- Also supports manual trigger via `workflow_dispatch`
-- Auto-commits updated `reviews.json` if content changed
+### Caching Behavior
+- `reviews-widget.js` fetches `reviews.json` with `?v=Date.now()` cache-busting, so **new review data shows up immediately** after GitHub Pages deploys (no manual steps)
+- Wix caches the JS file itself via CDN. The `?v=X` query param in the Wix Custom Element Server URL forces Wix to fetch a fresh copy
+- **Bump `?v=X` in Wix only when `reviews-widget.js` code changes** (not needed for review data changes)
+- GitHub Pages has `max-age=600` (10 min) on static files
+
+### Review Update Workflows
+
+**New Google reviews (automatic):**
+1. GitHub Action runs 1st of each month at 8:00 AM UTC (also supports `workflow_dispatch` for manual trigger)
+2. Fetches all 5-star reviews from Google via SearchAPI.io
+3. Preserves all `manual: true` entries in `reviews.json`
+4. Auto-commits if content changed
+5. GitHub Pages deploys, widget picks up new data on next page load
+
+**Adding a manual review:**
+1. Add entry to `reviews.json` with `"manual": true`, empty `date` and `thumbnail`
+2. Optional: set `avatarColor` for custom placeholder color
+3. Commit and push
+4. Shows up automatically after GitHub Pages deploys (~1 min)
+
+**Fetching reviews manually (outside monthly cycle):**
+```bash
+cd "/Users/erjung/Desktop/Apps/HW Private Chef"
+node --env-file=.env fetch-reviews.js
+# Then commit and push reviews.json
+```
+
+**Changing widget JS code:**
+1. Edit `reviews-widget.js` (and `index.html` for parity)
+2. Commit and push
+3. Bump `?v=X` in Wix Custom Element Server URL (Wix Editor > click element > Choose Source)
+4. Publish Wix site
 
 ## GitHub
 - **Account:** e11b
