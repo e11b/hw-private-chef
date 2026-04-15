@@ -1,0 +1,20 @@
+name = "hw-notion-mcp"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# Secrets (set via `wrangler secret put <NAME>`):
+# NOTION_TOKEN
+# ACCESS_CLIENT_ID
+# ACCESS_CLIENT_SECRET
+# ACCESS_TOKEN_URL
+# ACCESS_AUTHORIZATION_URL
+# ACCESS_JWKS_URL
+# COOKIE_ENCRYPTION_KEY

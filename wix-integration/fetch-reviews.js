@@ -1,5 +1,8 @@
 const fs = require('fs');
+const path = require('path');
 const https = require('https');
+
+const REVIEWS_PATH = path.join(__dirname, '..', 'reviews.json');
 
 const API_KEY = process.env.SEARCHAPI_KEY;
 const PLACE_ID = 'ChIJMVlUlSP2xksR4KIdsNGjCZg';
@@ -28,7 +31,7 @@ async function fetchAllReviews() {
       url += `&next_page_token=${encodeURIComponent(nextToken)}`;
     }
 
-    console.log(`Fetching page ${page + 1}...`);
+    console.log(`Fetching page ${page + 1}`);
     const data = await fetch(url);
 
     if (data.error) {
@@ -81,14 +84,14 @@ async function main() {
 
     // Preserve manual reviews (marked with manual: true)
     let manualReviews = [];
-    if (fs.existsSync('reviews.json')) {
-      const existing = JSON.parse(fs.readFileSync('reviews.json', 'utf8'));
+    if (fs.existsSync(REVIEWS_PATH)) {
+      const existing = JSON.parse(fs.readFileSync(REVIEWS_PATH, 'utf8'));
       manualReviews = existing.filter(r => r.manual === true);
       console.log(`Preserving ${manualReviews.length} manual review(s)`);
     }
 
     const allReviews = [...googleReviews, ...manualReviews];
-    fs.writeFileSync('reviews.json', JSON.stringify(allReviews, null, 2) + '\n');
+    fs.writeFileSync(REVIEWS_PATH, JSON.stringify(allReviews, null, 2) + '\n');
     console.log(`reviews.json updated: ${googleReviews.length} Google + ${manualReviews.length} manual`);
   } catch (err) {
     console.error('Error:', err.message);

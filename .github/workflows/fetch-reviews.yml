@@ -22,7 +22,7 @@ jobs:
       - name: Fetch reviews from SearchAPI
         env:
           SEARCHAPI_KEY: ${{ secrets.SEARCHAPI_KEY }}
-        run: node fetch-reviews.js
+        run: node wix-integration/fetch-reviews.js
 
       - name: Commit and push if changed
         run: |

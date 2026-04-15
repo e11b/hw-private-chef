@@ -1,0 +1,22 @@
+{
+  "name": "hw-notion-mcp",
+  "version": "2.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@notionhq/client": "^5.17.0",
+    "agents": "^0.1.0",
+    "workers-oauth-provider": "^0.1.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "wrangler": "^4.0.0"
+  }
+}
