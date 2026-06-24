@@ -24,7 +24,7 @@ Monorepo for Haley Wexler's personal chef business infrastructure. For business 
 
 - `@notionhq/client` **v2** (different from MCP server, do NOT cross-upgrade)
 - Vercel serverless, root directory set to `wix-integration` in Vercel project settings
-- Deploy: `cd wix-integration && vercel --prod --yes`
+- Deploy: `vercel --prod --yes` from repo root (project `hw-private-chef`, root dir `wix-integration`; deploying from inside `wix-integration/` double-nests → 404)
 - Env vars (Vercel production): `NOTION_TOKEN`, `NOTION_DATABASE_ID`
 - Three maintenance arrays in `api/client-onboarding.js` must match Wix form: `MENU_OPTIONS`, `PANTRY_ITEMS`, `KITCHEN_TOOLS`
 

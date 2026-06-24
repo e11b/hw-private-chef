@@ -45,6 +45,37 @@ function getField(submissions, label) {
   return field ? field.value.trim() : '';
 }
 
+/**
+ * Normalizes a label for tolerant matching: straightens curly apostrophes,
+ * collapses whitespace, lowercases. Guards against silent label-match drops.
+ */
+function normalizeLabel(s) {
+  return String(s || '').replace(/’/g, "'").replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * Finds a field by trying a list of candidate labels (normalized match).
+ * Returns the first matching field's trimmed value, or '' if none match.
+ */
+function getFieldFuzzy(submissions, candidates) {
+  const wanted = candidates.map(normalizeLabel);
+  const field = submissions.find(s => wanted.includes(normalizeLabel(s.label)));
+  return field && field.value != null ? String(field.value).trim() : '';
+}
+
+/**
+ * Formats a phone number by stripping the +1 prefix and formatting as (xxx) xxx-xxxx.
+ * Copied from new-client.js (serverless functions cannot share imports).
+ */
+function formatPhone(raw) {
+  const digits = raw.replace(/\D/g, '');
+  const local = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
+  if (local.length === 10) {
+    return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6)}`;
+  }
+  return local;
+}
+
 function makeParagraph(boldLabel, text) {
   return {
     object: 'block',
@@ -102,25 +133,19 @@ module.exports = async (req, res) => {
     const name = getField(submissions, 'Name');
     const email = getField(submissions, 'Email');
     const firstName = name.split(' ')[0];
+    const phoneRaw = getFieldFuzzy(submissions, ['Phone', 'Phone Number', 'Cell', 'Cell Phone', 'Mobile']);
+    const formattedPhone = phoneRaw ? formatPhone(phoneRaw) : '';
 
     if (!email) {
       return res.status(400).json({ error: 'Email is required' });
     }
-
-    // Search for existing client by email
-    const searchResults = await notion.databases.query({
-      database_id: DATABASE_ID,
-      filter: {
-        property: 'Email',
-        rich_text: { equals: email },
-      },
-    });
 
     // DB column updates
     const properties = {};
     const address = getField(submissions, 'Grocery Delivery Address');
     const familySize = getField(submissions, 'How many people will be eating the meals? (adults, children/ages)');
     const allergies = getField(submissions, 'Allergies or dietary restrictions');
+    if (formattedPhone) properties.Phone = { phone_number: formattedPhone };
     if (address) properties.Address = { rich_text: [{ text: { content: address } }] };
     if (familySize) properties['Family Size'] = { rich_text: [{ text: { content: familySize } }] };
     if (allergies) properties.Allergies = { rich_text: [{ text: { content: allergies } }] };
@@ -151,28 +176,20 @@ module.exports = async (req, res) => {
     const menuEntry = submissions.find(s => s.label.trim().startsWith('Please choose 3 meals'));
     const menuChoices = menuEntry ? splitMenuChoices(menuEntry.value.trim()) : [];
 
-    // --- Determine client page ID ---
-    let clientPageId;
+    // --- Always create a new entry (no dedup; a re-submit makes a fresh entry) ---
+    const newPage = await notion.pages.create({
+      parent: { database_id: DATABASE_ID },
+      properties: {
+        Name: { title: [{ text: { content: `New* ${name}` } }] },
+        Email: { rich_text: [{ text: { content: email } }] },
+        ...properties,
+      },
+    });
+    const clientPageId = newPage.id;
 
-    if (searchResults.results.length > 0) {
-      clientPageId = searchResults.results[0].id;
-      if (Object.keys(properties).length > 0) {
-        await notion.pages.update({ page_id: clientPageId, properties });
-      }
-    } else {
-      const newPage = await notion.pages.create({
-        parent: { database_id: DATABASE_ID },
-        properties: {
-          Name: { title: [{ text: { content: `New* ${name}` } }] },
-          Email: { rich_text: [{ text: { content: email } }] },
-          ...properties,
-        },
-      });
-      clientPageId = newPage.id;
-    }
-
-    // --- Step 1: Append Package + Grocery delivery to main body ---
+    // --- Step 1: Append Phone + Package + Grocery delivery to main body ---
     const topBlocks = [];
+    if (formattedPhone) topBlocks.push(makeParagraph('Phone', formattedPhone));
     if (packageValue) topBlocks.push(makeParagraph('Package', packageValue));
     if (deliveryValue) topBlocks.push(makeParagraph('Grocery delivery', deliveryValue));
 
@@ -186,7 +203,6 @@ module.exports = async (req, res) => {
     // --- Step 2: Create Preferences sub-page ---
     const prefsChildren = [];
     if (allergies) prefsChildren.push(makeParagraph('Allergies', allergies));
-    if (swapValue) prefsChildren.push(makeParagraph('Dislikes/Avoid', swapValue));
     if (favoriteFoods) prefsChildren.push(makeParagraph('Favorite Foods/More of', favoriteFoods));
     if (weeklyConsistent) prefsChildren.push(makeParagraph('Want consistently each week', weeklyConsistent));
     if (foodPrefsValue) prefsChildren.push(makeParagraph('Eating/Food Preferences', foodPrefsValue));
@@ -243,19 +259,21 @@ module.exports = async (req, res) => {
       children: pantryChildren,
     });
 
-    // --- Step 4: Append First week's menu choices ---
-    if (menuChoices.length > 0) {
-      const menuBlocks = [
-        makeBoldLabel("First week's menu choices:"),
-        ...menuChoices.map(meal => makeBullet(meal)),
-      ];
+    // --- Step 4: Append First week's menu choices + First Menu Swaps ---
+    if (menuChoices.length > 0 || swapValue) {
+      const menuBlocks = [];
+      if (menuChoices.length > 0) {
+        menuBlocks.push(makeBoldLabel("First week's menu choices:"));
+        menuBlocks.push(...menuChoices.map(meal => makeBullet(meal)));
+      }
+      if (swapValue) menuBlocks.push(makeParagraph('First Menu Swaps', swapValue));
       await notion.blocks.children.append({
         block_id: clientPageId,
         children: menuBlocks,
       });
     }
 
-    res.status(200).json({ success: true, action: searchResults.results.length > 0 ? 'updated' : 'created' });
+    res.status(200).json({ success: true, action: 'created' });
   } catch (error) {
     console.error('Error processing onboarding:', error);
     res.status(500).json({ error: 'Failed to process onboarding' });

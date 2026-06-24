@@ -16,7 +16,7 @@ Three systems serve Haley's business:
 | System | Location | Hosting | Purpose |
 |--------|----------|---------|---------|
 | Notion MCP server | `notion-mcp/` | Cloudflare Workers (planned, currently local stdio) | Claude reads/writes Notion |
-| Wix form webhooks | `wix-integration/api/` | Vercel serverless | New client + onboarding forms write to Notion |
+| Wix form webhooks | `wix-integration/api/` | Vercel serverless | Onboarding form creates Notion entries; become-a-client is a no-op |
 | Reviews widget | repo root + `wix-integration/fetch-reviews.js` | GitHub Pages | Google reviews display on haleywexler.com |
 
 ## Notion MCP Server (`notion-mcp/`)
@@ -70,14 +70,14 @@ Two Vercel serverless endpoints receiving Wix form webhooks.
 ### Flow
 1. Client submits form on haleywexler.com
 2. Wix Automation POSTs to Vercel endpoint
-3. Endpoint writes to Notion "Client Files" database
+3. Onboarding endpoint creates a Notion "Client Files" row; become-a-client is a no-op (returns 200, no write)
 
 ### Endpoints
 
 | Endpoint | Trigger | Action |
 |----------|---------|--------|
-| `/api/new-client` | "Become a client" form | Creates new row with "New*" prefix |
-| `/api/client-onboarding` | Onboarding form (hidden page) | Matches by email, updates entry, creates Preferences + Pantry sub-pages |
+| `/api/new-client` | "Become a client" form | No-op (returns 200, no Notion write); leads live in Wix responses |
+| `/api/client-onboarding` | Onboarding form (hidden page) | Always creates a new "New*" row (no email dedup); writes Phone (property + body block), Package/Grocery body blocks, Preferences + Pantry sub-pages, menu choices + First Menu Swaps |
 
 ### Deployment
 - Vercel project: `hw-private-chef`, account: `eric-jungs-projects`
