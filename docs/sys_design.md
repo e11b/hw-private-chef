@@ -77,20 +77,20 @@ Two Vercel serverless endpoints receiving Wix form webhooks.
 | Endpoint | Trigger | Action |
 |----------|---------|--------|
 | `/api/new-client` | "Become a client" form | No-op (returns 200, no Notion write); leads live in Wix responses |
-| `/api/client-onboarding` | Onboarding form (hidden page) | Always creates a new "New*" row (no email dedup); writes Phone (property + body block), Package/Grocery body blocks, Preferences + Pantry sub-pages, menu choices + First Menu Swaps |
+| `/api/client-onboarding` | Onboarding form (hidden page) | Always creates a new "New*" row, `Status`=Potential Client (no email dedup); one atomic `pages.create` with properties (Phone Numbers, Address, Allergies) + in-body toggles (Preferences, Kitchen, Pantry checklist), menu choices + First Menu Swaps |
 
 ### Deployment
 - Vercel project: `hw-private-chef`, account: `eric-jungs-projects`
 - URL: https://hw-private-chef.vercel.app
 - Root directory: `wix-integration` (must be set in Vercel project settings)
 - Env vars: `NOTION_TOKEN`, `NOTION_DATABASE_ID`
-- Uses `@notionhq/client` v2.x (separate from MCP server's v5)
+- Uses `@notionhq/client` v5.x (aligned with MCP server)
 
 ### Maintenance Arrays
 Three hardcoded arrays in `api/client-onboarding.js` must match the Wix form exactly:
-- `MENU_OPTIONS` (7 meal descriptions, needed because Wix comma-joins multi-select)
+- `MENU_OPTIONS` (9 meal descriptions, needed because Wix comma-joins multi-select)
 - `PANTRY_ITEMS` (19 items)
-- `KITCHEN_TOOLS` (8 items)
+- `KITCHEN_TOOLS` (9 items; "Mixing Bowls" and "Cutting Boards" are separate checkboxes)
 
 When Haley updates the Wix form, update these arrays.
 

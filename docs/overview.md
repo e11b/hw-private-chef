@@ -36,10 +36,10 @@ Each week, Haley:
 2. Opens a new conversation in the Menu Generation project for each client order
 3. Tells Claude the client name, delivery day (S/M/T/W/TR = Sun/Mon/Tue/Wed/Thu), and target week
 4. Claude fetches base menus from Weekly Menus
-5. Claude fetches client data from Client Files (Portion Size, Allergies, Preferences sub-page, Pantry sub-page, last 2 dated menu entries for overlap check)
+5. Claude fetches client data from Client Files (Portion Size, Allergies, Preferences and Pantry toggles, last 2 dated menu entries for overlap check)
 6. Claude selects and adapts menus matching the client's Portion Size count
 7. Haley iterates 2-3 rounds (first-pass is never correct for wealthy clients)
-8. On explicit approval ("save it"), Claude writes menus to the client's page body (new dated heading + bullet list, positioned after Preferences/Pantry sub-pages, before older entries). Uses `append_blocks` with the `after` parameter for positional insertion.
+8. On explicit approval ("save it"), Claude writes menus to the client's page body (new dated heading + bullet list, positioned after the Preferences/Kitchen/Pantry toggles, before older entries). Uses `append_blocks` with the `after` parameter for positional insertion.
 9. Repeat for ~20 clients/week. One client per conversation, always.
 
 Every week every menu is different. There are no "stable" clients where drafts land on first pass. Budget the full iteration cycle for every client, every week.
@@ -52,14 +52,17 @@ All client data lives in Notion, accessed via the custom MCP server ("HW Claude"
 - **ID:** `229f9bcd-7056-809e-bb0f-d35b804efac5`
 - **Data source ID:** `229f9bcd-7056-8017-a65b-000bb42f1fe8`
 - ~27 rows: mix of active clients, "New*" prospects, and placeholders
-- Properties: Name, Phone, Address, Email, Portion Size, Allergies, Delivery Day, Family Size, Card
+- Properties: Name, Email, Phone Numbers, Address, Portion Size, Allergies, Status, Delivery Day, Location, Card, Cook Notes
 
 Each client's page body contains:
 1. Contact info blocks at top
-2. Sub-page: `<Name>'s Preferences` (dietary restrictions, favorites, dislikes, hard rules)
-3. Sub-page: `<Name>'s Pantry` (current staples as checkbox lists by category)
-4. Sometimes: "Spice Cabinet", "Notes for the Cook" sub-pages
-5. Menu history: dated headings (e.g. `4/15`, `3/30`) each followed by bullet lists of that order's menus. Newest at top.
+2. Toggle: `❤️ <First>'s Preferences` (dietary restrictions, favorites, dislikes; Food Preferences + Allergies sub-headings)
+3. Toggle: `🔪 <First>'s Kitchen` (kitchen-tools checklist)
+4. Toggle: `🍴 <First>'s Pantry` (staples as checkboxes; Essentials + category sub-headings)
+5. Sometimes: "Spice Cabinet", "Notes for the Cook" sub-pages
+6. Menu history: dated headings (e.g. `4/15`, `3/30`) each followed by bullet lists of that order's menus. Newest at top.
+
+Onboarding-created rows use the toggle layout above (matches active clients like Divya). Some legacy rows may still use older `<Name>'s Preferences`/`Pantry` sub-pages.
 
 ### Weekly Client Orders
 - **Page ID:** `287f9bcd-7056-80fc-9ea5-ed5e2db726a9`

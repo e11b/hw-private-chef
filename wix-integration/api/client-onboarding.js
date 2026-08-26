@@ -11,9 +11,10 @@ const PANTRY_ITEMS = [
   'Brown Rice', 'Jasmine Rice', 'Breadcrumbs', 'Nuts',
 ];
 
+// Wix form splits "Mixing Bowls" and "Cutting Boards" into two separate checkboxes.
 const KITCHEN_TOOLS = [
   'Pots and Pans', 'Large and Medium Tupperware', 'Sheet Trays',
-  'Mixing Bowls and Cutting Boards', 'Tin Foil', 'Parchment Paper',
+  'Mixing Bowls', 'Cutting Boards', 'Tin Foil', 'Parchment Paper',
   'Rice Cooker or Instapot', 'Blender',
 ];
 
@@ -26,6 +27,8 @@ const MENU_OPTIONS = [
   'Roasted Chicken Breasts (skin-on bone-in) with Brussels Sprout Quinoa Salad (Roasted Carrots, Goat Cheese, Nuts, Herbs, Craisins)',
   'Maple Dijon Salmon, Roasted Delicata Squash and Side of Herby Couscous',
   'Italian Turkey Meatballs with Red Sauce and Basil, Roasted Asparagus and Spaghetti (or sub. spaghetti squash)',
+  'Veggie Packed Beef Bolognese (onion, carrot, celery, spinach, red wine, herbs) with Side of Pasta',
+  'Pan Seared Chicken Thighs (boneless) with Sautéed Asparagus and side of Lemon Parm Arugula Orzo',
 ];
 
 /**
@@ -41,7 +44,8 @@ function splitMenuChoices(combined) {
 }
 
 function getField(submissions, label) {
-  const field = submissions.find(s => s.label.trim() === label);
+  const want = normalizeLabel(label);
+  const field = submissions.find(s => normalizeLabel(s.label) === want);
   return field ? field.value.trim() : '';
 }
 
@@ -76,6 +80,8 @@ function formatPhone(raw) {
   return local;
 }
 
+// --- Block builders ---
+
 function makeParagraph(boldLabel, text) {
   return {
     object: 'block',
@@ -89,13 +95,44 @@ function makeParagraph(boldLabel, text) {
   };
 }
 
+function makeLine(text) {
+  return {
+    object: 'block',
+    type: 'paragraph',
+    paragraph: { rich_text: [{ text: { content: text } }] },
+  };
+}
+
 function makeHeading(text) {
+  return {
+    object: 'block',
+    type: 'heading_3',
+    heading_3: { rich_text: [{ text: { content: text } }] },
+  };
+}
+
+/**
+ * A collapsible heading_3 (is_toggleable) holding nested children. Children are
+ * one level deep, so the whole page (properties + these toggles) fits in a
+ * single pages.create call within Notion's 2-level nesting limit.
+ */
+function makeToggleHeading(text, children) {
   return {
     object: 'block',
     type: 'heading_3',
     heading_3: {
       rich_text: [{ text: { content: text } }],
+      is_toggleable: true,
+      children,
     },
+  };
+}
+
+function makeTodo(text, checked) {
+  return {
+    object: 'block',
+    type: 'to_do',
+    to_do: { rich_text: [{ text: { content: text } }], checked: !!checked },
   };
 }
 
@@ -103,9 +140,7 @@ function makeBullet(text) {
   return {
     object: 'block',
     type: 'bulleted_list_item',
-    bulleted_list_item: {
-      rich_text: [{ text: { content: text } }],
-    },
+    bulleted_list_item: { rich_text: [{ text: { content: text } }] },
   };
 }
 
@@ -125,14 +160,19 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const body = req.body;
+    const body = req.body || {};
     console.log('Client onboarding webhook payload:', JSON.stringify(body, null, 2));
 
-    const submissions = body.data && body.data.submissions ? body.data.submissions : [];
+    // Normalize once so every label/value is a string. Guards the whole file's
+    // label/value reads against null entries (a malformed submission degrades
+    // gracefully instead of throwing an opaque 500).
+    const submissions = (body.data && Array.isArray(body.data.submissions) ? body.data.submissions : [])
+      .filter(s => s && s.label != null)
+      .map(s => ({ label: String(s.label), value: s.value == null ? '' : String(s.value) }));
 
     const name = getField(submissions, 'Name');
     const email = getField(submissions, 'Email');
-    const firstName = name.split(' ')[0];
+    const firstName = name.split(' ')[0] || 'Client';
     const phoneRaw = getFieldFuzzy(submissions, ['Phone', 'Phone Number', 'Cell', 'Cell Phone', 'Mobile']);
     const formattedPhone = phoneRaw ? formatPhone(phoneRaw) : '';
 
@@ -140,15 +180,10 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'Email is required' });
     }
 
-    // DB column updates
-    const properties = {};
+    // Column values
     const address = getField(submissions, 'Grocery Delivery Address');
     const familySize = getField(submissions, 'How many people will be eating the meals? (adults, children/ages)');
     const allergies = getField(submissions, 'Allergies or dietary restrictions');
-    if (formattedPhone) properties.Phone = { phone_number: formattedPhone };
-    if (address) properties.Address = { rich_text: [{ text: { content: address } }] };
-    if (familySize) properties['Family Size'] = { rich_text: [{ text: { content: familySize } }] };
-    if (allergies) properties.Allergies = { rich_text: [{ text: { content: allergies } }] };
 
     // Preferences fields
     const favoriteFoods = getField(submissions, 'Favorite foods or something you\'d like to incorporate more of');
@@ -158,12 +193,6 @@ module.exports = async (req, res) => {
     const swapEntry = submissions.find(s => s.label.trim().includes('swap from the above'));
     const swapValue = swapEntry ? swapEntry.value.trim() : '';
 
-    // Checkbox processing
-    const checkedPantry = PANTRY_ITEMS.filter(item => getField(submissions, item) === 'Checked');
-    const uncheckedPantry = PANTRY_ITEMS.filter(item => !checkedPantry.includes(item));
-    const checkedTools = KITCHEN_TOOLS.filter(item => getField(submissions, item) === 'Checked');
-    const uncheckedTools = KITCHEN_TOOLS.filter(item => !checkedTools.includes(item));
-
     // Main body fields
     const packageEntry = submissions.find(s => s.label.trim() === 'Single choice');
     const packageValue = packageEntry ? packageEntry.value.trim() : '';
@@ -172,108 +201,80 @@ module.exports = async (req, res) => {
     const pantryLevelEntry = submissions.find(s => s.label.trim().includes('describes your pantry'));
     const pantryLevelValue = pantryLevelEntry ? pantryLevelEntry.value.trim() : '';
 
+    // Checkbox processing
+    const checkedPantry = PANTRY_ITEMS.filter(item => getField(submissions, item) === 'Checked');
+    const checkedTools = KITCHEN_TOOLS.filter(item => getField(submissions, item) === 'Checked');
+
     // Menu selections - Wix joins multiple checkbox picks into one comma-separated string
     const menuEntry = submissions.find(s => s.label.trim().startsWith('Please choose 3 meals'));
     const menuChoices = menuEntry ? splitMenuChoices(menuEntry.value.trim()) : [];
 
-    // --- Always create a new entry (no dedup; a re-submit makes a fresh entry) ---
-    const newPage = await notion.pages.create({
-      parent: { database_id: DATABASE_ID },
-      properties: {
-        Name: { title: [{ text: { content: `New* ${name}` } }] },
-        Email: { rich_text: [{ text: { content: email } }] },
-        ...properties,
-      },
-    });
-    const clientPageId = newPage.id;
-
-    // --- Step 1: Append Phone + Package + Grocery delivery to main body ---
-    const topBlocks = [];
-    if (formattedPhone) topBlocks.push(makeParagraph('Phone', formattedPhone));
-    if (packageValue) topBlocks.push(makeParagraph('Package', packageValue));
-    if (deliveryValue) topBlocks.push(makeParagraph('Grocery delivery', deliveryValue));
-
-    if (topBlocks.length > 0) {
-      await notion.blocks.children.append({
-        block_id: clientPageId,
-        children: topBlocks,
-      });
+    // Drift detection: warn when expected form labels are absent from the payload
+    // (a renamed Wix field silently degrades data instead of erroring).
+    const presentLabels = new Set(submissions.map(s => normalizeLabel(s.label)));
+    const missingPantry = PANTRY_ITEMS.filter(i => !presentLabels.has(normalizeLabel(i)));
+    const missingTools = KITCHEN_TOOLS.filter(i => !presentLabels.has(normalizeLabel(i)));
+    if (missingPantry.length) console.warn('Onboarding: pantry labels not in payload (possible form drift):', missingPantry);
+    if (missingTools.length) console.warn('Onboarding: kitchen labels not in payload (possible form drift):', missingTools);
+    const anyMenuMatch = menuEntry && MENU_OPTIONS.some(opt =>
+      menuEntry.value.replace(/\s+/g, ' ').includes(opt.replace(/\s+/g, ' ')));
+    if (menuEntry && !anyMenuMatch) {
+      console.warn('Onboarding: menu selection did not match any MENU_OPTIONS (possible menu drift):', menuEntry.value.trim());
     }
 
-    // --- Step 2: Create Preferences sub-page ---
+    // --- Properties (exact live schema names; "Allergies  " has two trailing spaces) ---
+    const properties = {
+      Name: { title: [{ text: { content: `New* ${name}` } }] },
+      Email: { rich_text: [{ text: { content: email } }] },
+      Status: { select: { name: 'Potential Client' } },
+    };
+    if (formattedPhone) properties['Phone Numbers'] = { rich_text: [{ text: { content: formattedPhone } }] };
+    if (address) properties.Address = { rich_text: [{ text: { content: address } }] };
+    if (allergies) properties['Allergies  '] = { rich_text: [{ text: { content: allergies } }] };
+
+    // --- Page body (single atomic create) ---
+    const children = [];
+    if (packageValue) children.push(makeParagraph('Package', packageValue));
+    if (deliveryValue) children.push(makeParagraph('Grocery delivery', deliveryValue));
+
+    // Preferences toggle (Food Preferences + Allergies as nested headings)
     const prefsChildren = [];
-    if (allergies) prefsChildren.push(makeParagraph('Allergies', allergies));
-    if (favoriteFoods) prefsChildren.push(makeParagraph('Favorite Foods/More of', favoriteFoods));
-    if (weeklyConsistent) prefsChildren.push(makeParagraph('Want consistently each week', weeklyConsistent));
-    if (foodPrefsValue) prefsChildren.push(makeParagraph('Eating/Food Preferences', foodPrefsValue));
+    if (familySize) prefsChildren.push(makeParagraph('Family size', familySize));
+    prefsChildren.push(makeHeading('Food Preferences:'));
+    if (favoriteFoods) prefsChildren.push(makeParagraph('Favorite / more of', favoriteFoods));
+    if (weeklyConsistent) prefsChildren.push(makeParagraph('Want consistently', weeklyConsistent));
+    if (foodPrefsValue) prefsChildren.push(makeLine(foodPrefsValue));
+    prefsChildren.push(makeHeading('Allergies:'));
+    if (allergies) prefsChildren.push(makeLine(allergies));
+    children.push(makeToggleHeading(`❤️ ${firstName}'s Preferences`, prefsChildren));
 
-    await notion.pages.create({
-      parent: { page_id: clientPageId },
-      icon: { type: 'emoji', emoji: '❤️' },
-      properties: {
-        title: [{ text: { content: `${firstName}'s Preferences` } }],
-      },
-      children: prefsChildren,
-    });
+    // Kitchen toggle (its own section, above Pantry)
+    const kitchenChildren = KITCHEN_TOOLS.map(tool => makeTodo(tool, checkedTools.includes(tool)));
+    children.push(makeToggleHeading(`🔪 ${firstName}'s Kitchen`, kitchenChildren));
 
-    // --- Step 3: Create Pantry sub-page ---
+    // Pantry toggle (Essentials checklist)
     const pantryChildren = [];
     if (pantryLevelValue) pantryChildren.push(makeParagraph('Pantry level', pantryLevelValue));
+    pantryChildren.push(makeHeading('Essentials'));
+    for (const item of PANTRY_ITEMS) {
+      pantryChildren.push(makeTodo(item, checkedPantry.includes(item)));
+    }
+    children.push(makeToggleHeading(`🍴 ${firstName}'s Pantry`, pantryChildren));
 
-    // Pantry items section
-    pantryChildren.push(makeHeading('Pantry Items'));
-    if (checkedPantry.length > 0) {
-      pantryChildren.push(makeBoldLabel('In Stock:'));
-      for (const item of checkedPantry) {
-        pantryChildren.push(makeBullet(item));
-      }
+    // First week's menu choices + swaps
+    if (menuChoices.length > 0) {
+      children.push(makeBoldLabel("First week's menu choices:"));
+      children.push(...menuChoices.map(meal => makeBullet(meal)));
     }
-    if (uncheckedPantry.length > 0) {
-      pantryChildren.push(makeBoldLabel('Needs:'));
-      for (const item of uncheckedPantry) {
-        pantryChildren.push(makeBullet(item));
-      }
-    }
+    if (swapValue) children.push(makeParagraph('First Menu Swaps', swapValue));
 
-    // Kitchen tools section
-    pantryChildren.push(makeHeading('Kitchen Items'));
-    if (checkedTools.length > 0) {
-      pantryChildren.push(makeBoldLabel('In Stock:'));
-      for (const item of checkedTools) {
-        pantryChildren.push(makeBullet(item));
-      }
-    }
-    if (uncheckedTools.length > 0) {
-      pantryChildren.push(makeBoldLabel('Needs:'));
-      for (const item of uncheckedTools) {
-        pantryChildren.push(makeBullet(item));
-      }
-    }
-
-    await notion.pages.create({
-      parent: { page_id: clientPageId },
-      icon: { type: 'emoji', emoji: '🍴' },
-      properties: {
-        title: [{ text: { content: `${firstName}'s Pantry` } }],
-      },
-      children: pantryChildren,
+    const created = await notion.pages.create({
+      parent: { database_id: DATABASE_ID },
+      properties,
+      children,
     });
 
-    // --- Step 4: Append First week's menu choices + First Menu Swaps ---
-    if (menuChoices.length > 0 || swapValue) {
-      const menuBlocks = [];
-      if (menuChoices.length > 0) {
-        menuBlocks.push(makeBoldLabel("First week's menu choices:"));
-        menuBlocks.push(...menuChoices.map(meal => makeBullet(meal)));
-      }
-      if (swapValue) menuBlocks.push(makeParagraph('First Menu Swaps', swapValue));
-      await notion.blocks.children.append({
-        block_id: clientPageId,
-        children: menuBlocks,
-      });
-    }
-
-    res.status(200).json({ success: true, action: 'created' });
+    res.status(200).json({ success: true, action: 'created', id: created.id });
   } catch (error) {
     console.error('Error processing onboarding:', error);
     res.status(500).json({ error: 'Failed to process onboarding' });
