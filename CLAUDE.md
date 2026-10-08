@@ -6,7 +6,7 @@ Monorepo for Haley Wexler's personal chef business infrastructure. For business 
 
 | Directory | What | Hosting |
 |-----------|------|---------|
-| `notion-mcp/` | Custom Notion MCP server (13 tools) | Local stdio (Cloudflare Workers planned) |
+| `notion-mcp/` | Custom Notion MCP server (13 tools) | Local stdio (remote CF Worker WIP parked — see `docs/notion-mcp-worker-handoff.md`) |
 | `wix-integration/` | Wix form webhooks + review fetcher | Vercel |
 | root (`reviews-widget.js`, `reviews.json`, `index.html`) | Reviews widget | GitHub Pages (serves from `/`) |
 | `docs/` | Business overview, system design, handoff | N/A |
@@ -27,13 +27,15 @@ Monorepo for Haley Wexler's personal chef business infrastructure. For business 
 - Deploy: `vercel --prod --yes` from repo root (project `hw-private-chef`, root dir `wix-integration`; deploying from inside `wix-integration/` double-nests → 404)
 - Env vars (Vercel production): `NOTION_TOKEN`, `NOTION_DATABASE_ID`
 - Three maintenance arrays in `api/client-onboarding.js` must match Wix form: `MENU_OPTIONS`, `PANTRY_ITEMS`, `KITCHEN_TOOLS`
+- Onboarding returns 200 once the Notion row exists (Wix retries duplicate rows); failures surface as callouts on the page, not logs (Hobby logs expire in 1h). Row build steps: `docs/sys_design.md`
+- Menu Archives view needs the "Wix Forms (internal)" connection on the Weekly Schedule page; removing it leaves a placeholder on new client pages
 
 ## Notion Integrations (separate tokens)
 
 | Integration | Scope | Used by |
 |---|---|---|
 | HW Claude | Full read/write | MCP server |
-| Wix Forms | Write-only | Vercel endpoints |
+| Wix Forms | Client Rolodex + Weekly Schedule (read/write) | Vercel endpoints |
 
 Do NOT use the Wix Forms token for the MCP server or vice versa.
 

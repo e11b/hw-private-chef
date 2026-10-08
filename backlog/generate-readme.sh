@@ -13,7 +13,7 @@ Auto-generated. Do not edit directly. Run `bash backlog/generate-readme.sh` afte
 HEADER
 
 # Collect items by priority
-for priority in P0 P1 P2 P3 P4 P5; do
+for priority in P0 P1 P2 P3 P4 P5 P6; do
   items=""
   for file in "$BACKLOG_DIR"/*.md; do
     [ "$(basename "$file")" = "README.md" ] && continue

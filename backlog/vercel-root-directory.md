@@ -1,7 +1,7 @@
 ---
 title: Update Vercel root directory for monorepo
 priority: P1
-status: pending
+status: done
 created: 2026-04-11
 ---
 

@@ -59,8 +59,9 @@ Each client's page body contains:
 2. Toggle: `❤️ <First>'s Preferences` (dietary restrictions, favorites, dislikes; Food Preferences + Allergies sub-headings)
 3. Toggle: `🔪 <First>'s Kitchen` (kitchen-tools checklist)
 4. Toggle: `🍴 <First>'s Pantry` (staples as checkboxes; Essentials + category sub-headings)
-5. Sometimes: "Spice Cabinet", "Notes for the Cook" sub-pages
-6. Menu history: dated headings (e.g. `4/15`, `3/30`) each followed by bullet lists of that order's menus. Newest at top.
+5. Toggle: `📋 Menu Archives` (linked view of the Weekly Schedule Archive filtered to this client; Haley built these by hand for existing clients on 09/17/26, onboarding creates it for new ones)
+6. Sometimes: "Spice Cabinet", "Notes for the Cook" sub-pages
+7. Menu history: dated headings (e.g. `4/15`, `3/30`) each followed by bullet lists of that order's menus. Newest at top.
 
 Onboarding-created rows use the toggle layout above (matches active clients like Divya). Some legacy rows may still use older `<Name>'s Preferences`/`Pantry` sub-pages.
 
@@ -90,7 +91,7 @@ Do not confuse these with active workflow pages:
 | Integration | Purpose | Used by |
 |---|---|---|
 | HW Claude | Full read/write, MCP server | Claude Desktop, Claude Code |
-| Wix Forms | Write-only, form webhooks | Vercel endpoints |
+| Wix Forms | Read/write on Client Rolodex + Weekly Schedule (connected 10/08/26), form webhooks | Vercel endpoints |
 
 ## Rate Limits
 
