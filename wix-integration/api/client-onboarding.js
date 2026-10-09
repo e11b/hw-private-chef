@@ -21,9 +21,29 @@ const ARCHIVE_PROP = {
 };
 const MENU_ARCHIVES_TITLE = '📋 Menu Archives';
 const MENU_ARCHIVES_PLACEHOLDER = '⚠️ Archive view was not set up automatically. If a Weekly Schedule Archive table sits right below this toggle, drag it in here; otherwise add a linked view of Weekly Schedule Archive filtered to this client.';
-// Past this age the post-create view steps are skipped; the placeholder then
-// tells Haley to add the view by hand.
-const VIEW_STEP_DEADLINE_MS = 20000;
+// Past this age the post-create steps (pantry copy, archive view) are skipped; their
+// placeholders then tell Haley to finish by hand.
+const POST_CREATE_DEADLINE_MS = 20000;
+
+// Haley's master pantry list, a row in Client Rolodex. Read on every submission, so
+// her edits to it apply to the next new client with no code change.
+const PANTRY_TEMPLATE_PAGE_ID = '3f3f9bcd-7056-80b6-b5ee-e5ed63f8ee93';
+const PANTRY_TEMPLATE_READ_TIMEOUT_MS = 5000;
+const PANTRY_PLACEHOLDER_START = "⚠️ Pantry list wasn't copied";
+// The only tags the template's markdown may hold. Anything else (a sub-page, linked
+// view, mention, callout, table) is refused, as are images: a markdown write moves a
+// sub-page or view out of the template instead of copying it, and the rest is untested.
+const PANTRY_TEMPLATE_TAG_RE = /^(<br\s*\/?>|<span( (color|underline)="[a-z_]+")+>|<\/span>|<empty-block\/>)$/;
+// Form checkbox -> template item names, used only when the template has no item
+// with the checkbox's own name.
+const PANTRY_ALIASES = {
+  'Rice Wine Vinegar': ['Rice Vinegar'],
+  'Dijon Mustard': ['Dijon'],
+  'Flour': ['AP Flour'],
+  'Breadcrumbs': ['Regular Breadcrumbs'],
+  'Sugar': ['Brown Sugar'],
+  'Tin Foil': ['Tinfoil'],
+};
 
 const CENSUS_GEOCODER_URL = 'https://geocoding.geo.census.gov/geocoder/locations/address';
 const GEOCODE_TIMEOUT_MS = 5000;
@@ -50,14 +70,6 @@ const STATE_CODES = {
   'south dakota': 'SD', tennessee: 'TN', texas: 'TX', utah: 'UT', vermont: 'VT', virginia: 'VA',
   washington: 'WA', 'west virginia': 'WV', wisconsin: 'WI', wyoming: 'WY',
 };
-
-const PANTRY_ITEMS = [
-  'Olive Oil', 'Avocado Oil', 'Sesame Oil', 'Kosher Salt', 'Eggs',
-  'Sesame Seeds', 'Onion Powder/Garlic Powder/Basic Seasonings',
-  'Apple Cider Vinegar', 'Rice Wine Vinegar', 'Dijon Mustard',
-  'Soy Sauce', 'Honey', 'Maple Syrup', 'Miso', 'Quinoa',
-  'Brown Rice', 'Jasmine Rice', 'Breadcrumbs', 'Nuts',
-];
 
 // Wix form splits "Mixing Bowls" and "Cutting Boards" into two separate checkboxes.
 const KITCHEN_TOOLS = [
@@ -118,6 +130,9 @@ function makeReader(submissions) {
       return take(submissions.find(s => wanted.includes(normalizeLabel(s.label))));
     },
     where: test => take(submissions.find(s => test(normalizeLabel(s.label)))),
+    // Every ticked checkbox matching the label test, as trimmed labels
+    ticked: test => submissions.filter(s => s.value.trim() === 'Checked' && test(normalizeLabel(s.label)))
+      .map(s => { used.add(s); return s.label.trim(); }),
     unused: () => submissions.filter(s => !used.has(s) && s.value.trim() && s.value.trim() !== 'Not checked'),
   };
 }
@@ -181,6 +196,67 @@ async function geocode({ street, city, state, zip }) {
     console.warn('Onboarding: geocode failed:', err.name, err.message);
     return null;
   }
+}
+
+/**
+ * Reads the master pantry template as markdown. Returns null (the pantry placeholder
+ * then stays on the page) when it can't be read in time, came back partial, or holds
+ * any tag outside PANTRY_TEMPLATE_TAG_RE.
+ */
+async function readPantryTemplate() {
+  let timer;
+  try {
+    const res = await Promise.race([
+      notion.pages.retrieveMarkdown({ page_id: PANTRY_TEMPLATE_PAGE_ID }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timed out')), PANTRY_TEMPLATE_READ_TIMEOUT_MS);
+      }),
+    ]);
+    const markdown = res.markdown || '';
+    // Tags only, not an escaped "\<" in item text
+    const badTag = (markdown.match(/(?<!\\)<[^>\n]*>/g) || []).find(t => !PANTRY_TEMPLATE_TAG_RE.test(t));
+    const unknownBlocks = (res.unknown_block_ids || []).length;
+    const hasImage = /^\t*!\[/m.test(markdown);
+    if (res.truncated || unknownBlocks || badTag || hasImage || !/^\t*- \[[ xX]\](\s|$)/m.test(markdown)) {
+      console.warn('Onboarding: pantry template not usable:', JSON.stringify({ truncated: res.truncated, unknownBlocks, badTag: badTag && badTag.slice(0, 80), hasImage }));
+      return null;
+    }
+    return markdown;
+  } catch (err) {
+    console.warn('Onboarding: pantry template not read:', err && (err.code || err.name), err && err.message);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Unchecks every item in the template, then checks each ticked form box: the
+ * template items with the box's own name, else its PANTRY_ALIASES names.
+ * Returns the filled markdown and the ticked pantry boxes no item matched.
+ */
+function fillPantryTemplate(markdown, tickedPantry, tickedKitchen) {
+  const lines = markdown.split('\n');
+  const items = [];
+  lines.forEach((line, i) => {
+    const m = line.match(/^(\t*- \[)[ xX](\])(\s.*|)$/);
+    if (!m) return;
+    lines[i] = `${m[1]} ${m[2]}${m[3]}`;
+    // Item name without inline markup or a block color, e.g. '**Olive Oil** {color="red"}' -> "olive oil"
+    const name = m[3].replace(/\s*\{[^{}]*\}\s*$/, '').replace(/<[^>]*>/g, '').replace(/[*~`\\]/g, '');
+    items.push({ i, key: normalizeLabel(name) });
+  });
+  const matching = name => items.filter(item => item.key === normalizeLabel(name));
+  const check = label => {
+    const aliasKey = Object.keys(PANTRY_ALIASES).find(k => normalizeLabel(k) === normalizeLabel(label));
+    const own = matching(label);
+    const hits = own.length || !aliasKey ? own : PANTRY_ALIASES[aliasKey].flatMap(matching);
+    for (const item of hits) lines[item.i] = lines[item.i].replace('- [ ]', '- [x]');
+    return hits.length > 0;
+  };
+  const unmatched = tickedPantry.filter(label => !check(label));
+  tickedKitchen.forEach(check); // Parchment Paper, Tin Foil are on the template too
+  return { markdown: lines.join('\n'), unmatched };
 }
 
 // --- Block builders ---
@@ -341,6 +417,32 @@ async function attachMenuArchive(pageId, deadlineAt) {
   });
 }
 
+/**
+ * Replaces the pantry placeholder line (inside the pantry toggle) with the filled
+ * template, in one markdown write: either the whole list lands or the placeholder,
+ * which lists the ticked boxes, stays. Skipped past the request deadline.
+ */
+async function fillPantry(pageId, pantryMarkdown, deadlineAt) {
+  const beforeCall = step => {
+    if (Date.now() > deadlineAt) throw new Error(`deadline passed before ${step}`);
+  };
+  beforeCall('pages.retrieveMarkdown');
+  const lines = (await notion.pages.retrieveMarkdown({ page_id: pageId })).markdown.split('\n');
+  // Read back rather than rebuilt, since Notion may escape characters in the line
+  const found = lines.filter(l => l.startsWith(`\t${PANTRY_PLACEHOLDER_START}`));
+  if (found.length !== 1) throw new Error(`pantry placeholder found ${found.length} times`);
+  beforeCall('pages.updateMarkdown');
+  await notion.pages.updateMarkdown({
+    page_id: pageId,
+    type: 'update_content',
+    update_content: {
+      // Leading newline anchors the match to the start of the placeholder line
+      content_updates: [{ old_str: `\n${found[0]}`, new_str: `\n${pantryMarkdown.split('\n').map(l => `\t${l}`).join('\n')}` }],
+      allow_deleting_content: true,
+    },
+  });
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -394,9 +496,11 @@ module.exports = async (req, res) => {
     const deliveryValue = reader.where(l => l.includes('handle grocery delivery'));
     const pantryLevelValue = reader.where(l => l.includes('describes your pantry'));
 
-    // Checkbox processing
-    const checkedPantry = PANTRY_ITEMS.filter(item => reader.exact(item) === 'Checked');
+    // Checkbox processing. Every ticked box that isn't a kitchen tool is a pantry item,
+    // matched by name against the live pantry template (no form list to keep in sync).
     const checkedTools = KITCHEN_TOOLS.filter(item => reader.exact(item) === 'Checked');
+    const kitchenLabels = KITCHEN_TOOLS.map(normalizeLabel);
+    const tickedPantry = reader.ticked(l => !kitchenLabels.includes(l));
 
     // Menu selections - Wix joins multiple checkbox picks into one comma-separated string
     const menuValue = reader.where(l => l.startsWith('please choose 3 meals'));
@@ -405,9 +509,7 @@ module.exports = async (req, res) => {
     // Drift detection: warn when expected form labels are absent from the payload
     // (a renamed Wix field silently degrades data instead of erroring).
     const presentLabels = new Set(submissions.map(s => normalizeLabel(s.label)));
-    const missingPantry = PANTRY_ITEMS.filter(i => !presentLabels.has(normalizeLabel(i)));
     const missingTools = KITCHEN_TOOLS.filter(i => !presentLabels.has(normalizeLabel(i)));
-    if (missingPantry.length) console.warn('Onboarding: pantry labels not in payload (possible form drift):', missingPantry);
     if (missingTools.length) console.warn('Onboarding: kitchen labels not in payload (possible form drift):', missingTools);
     const anyMenuMatch = menuValue && MENU_OPTIONS.some(opt =>
       menuValue.replace(/\s+/g, ' ').includes(opt.replace(/\s+/g, ' ')));
@@ -415,7 +517,12 @@ module.exports = async (req, res) => {
       console.warn('Onboarding: menu selection did not match any MENU_OPTIONS (possible menu drift):', menuValue);
     }
 
-    const coords = address ? await geocode(addressParts) : null;
+    // Neither call throws; the template read runs alongside the geocode wait
+    const [coords, pantryTemplate] = await Promise.all([
+      address ? geocode(addressParts) : null,
+      readPantryTemplate(),
+    ]);
+    const pantry = pantryTemplate ? fillPantryTemplate(pantryTemplate, tickedPantry, checkedTools) : null;
 
     // Card: the form asks for the last 4 digits. Keep a clean 4-digit answer (or a
     // digit-free note like "paypal"); anything else (full card number, card + expiry)
@@ -468,13 +575,18 @@ module.exports = async (req, res) => {
     const kitchenChildren = KITCHEN_TOOLS.map(tool => makeTodo(tool, checkedTools.includes(tool)));
     children.push(makeToggleHeading(`🔪 ${firstName}'s Kitchen`, kitchenChildren));
 
-    // Pantry toggle (Essentials checklist)
+    // Pantry toggle: the template list replaces the placeholder after create (fillPantry).
+    // Client-typed text (Pantry level) stays in these JSON blocks, out of the markdown write.
     const pantryChildren = [];
     if (pantryLevelValue) pantryChildren.push(makeParagraph('Pantry level', pantryLevelValue));
-    pantryChildren.push(makeHeading('Essentials'));
-    for (const item of PANTRY_ITEMS) {
-      pantryChildren.push(makeTodo(item, checkedPantry.includes(item)));
+    if (pantry && pantry.unmatched.length) {
+      pantryChildren.push({
+        object: 'block',
+        type: 'paragraph',
+        paragraph: { rich_text: richText(`Form also checked (not on the pantry list): ${pantry.unmatched.join(', ')}`, { color: 'pink_background' }) },
+      });
     }
+    pantryChildren.push(makeLine(`${PANTRY_PLACEHOLDER_START} from "pantry template for wix". Copy it in by hand. Form checked: ${tickedPantry.join(', ') || 'none'}`));
     children.push(makeToggleHeading(`🍴 ${firstName}'s Pantry`, pantryChildren));
 
     // Menu Archives toggle: the archive view is moved in after create (attachMenuArchive)
@@ -535,8 +647,17 @@ module.exports = async (req, res) => {
     }
 
     // The row exists from here on: always answer 200 so Wix doesn't retry into a duplicate.
+    // The two steps run in turn (two markdown writes to one page at once is untested).
+    const deadlineAt = startedAt + POST_CREATE_DEADLINE_MS;
+    if (pantry) {
+      try {
+        await fillPantry(created.id, pantry.markdown, deadlineAt);
+      } catch (err) {
+        console.error('Onboarding: pantry list not copied, placeholder left on page:', err && (err.code || err.name), err && err.message);
+      }
+    }
     try {
-      await attachMenuArchive(created.id, startedAt + VIEW_STEP_DEADLINE_MS);
+      await attachMenuArchive(created.id, deadlineAt);
     } catch (err) {
       console.error('Onboarding: menu archive view not attached, placeholder left on page:', err && (err.code || err.name), err && err.message);
     }

@@ -26,7 +26,8 @@ Monorepo for Haley Wexler's personal chef business infrastructure. For business 
 - Vercel serverless, root directory set to `wix-integration` in Vercel project settings
 - Deploy: `vercel --prod --yes` from repo root (project `hw-private-chef`, root dir `wix-integration`; deploying from inside `wix-integration/` double-nests → 404)
 - Env vars (Vercel production): `NOTION_TOKEN`, `NOTION_DATABASE_ID`
-- Three maintenance arrays in `api/client-onboarding.js` must match Wix form: `MENU_OPTIONS`, `PANTRY_ITEMS`, `KITCHEN_TOOLS`
+- Maintenance arrays in `api/client-onboarding.js` must match Wix form: `MENU_OPTIONS`, `KITCHEN_TOOLS`, `PANTRY_ALIASES` (form boxes whose name differs from the template item)
+- Pantry list comes from the "pantry template for wix" row in Client Rolodex (`PANTRY_TEMPLATE_PAGE_ID`), read live per submission. Keep it in Client Rolodex (Wix Forms connection) and limited to headings, checkboxes, text and text colors. Sub-pages, linked views, mentions, callouts, plain toggle blocks, tables or images make every new client page get a placeholder instead of the list
 - Onboarding returns 200 once the Notion row exists (Wix retries duplicate rows); failures surface as callouts on the page, not logs (Hobby logs expire in 1h). Row build steps: `docs/sys_design.md`
 - Menu Archives view needs the "Wix Forms (internal)" connection on the Weekly Schedule page; removing it leaves a placeholder on new client pages
 

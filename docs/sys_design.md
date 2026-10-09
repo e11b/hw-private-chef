@@ -74,18 +74,20 @@ Two Vercel serverless endpoints receiving Wix form webhooks.
 | Endpoint | Trigger | Action |
 |----------|---------|--------|
 | `/api/new-client` | "Become a client" form | No-op (returns 200, no Notion write); leads live in Wix responses |
-| `/api/client-onboarding` | Onboarding form (hidden page) | Always creates a new "New*" row, `Status`=Meal Prep Client (no email dedup); properties (Email, Phone Numbers, Address, Card, Location, Allergies) + in-body toggles (Preferences, Kitchen, Pantry checklist, Menu Archives), menu choices + First Menu Swaps + "Other form answers" |
+| `/api/client-onboarding` | Onboarding form (hidden page) | Always creates a new "New*" row, `Status`=Meal Prep Client (no email dedup); properties (Email, Phone Numbers, Address, Card, Location, Allergies) + in-body toggles (Preferences, Kitchen, Pantry (copy of the pantry template), Menu Archives), menu choices + First Menu Swaps + "Other form answers" |
 
-### Onboarding row build (`client-onboarding.js`, updated 10/08/26)
+### Onboarding row build (`client-onboarding.js`, updated 10/09/26)
 
 | Step | Call | Must succeed | On failure |
 |------|------|---|---|
-| 1 | Census geocoder on the 5 address fields (5s cap) | No | No `Location`, 📍 callout on page |
+| 1 | In parallel: Census geocoder on the 5 address fields (5s cap); `pages.retrieveMarkdown` of the pantry template (5s cap) | No | No `Location`, 📍 callout on page / pantry placeholder stays |
 | 2 | `pages.create` (properties + full body, one call) | Yes | `validation_error` → fallback row (title + ⚠️ callout + raw answers), 200. Timeout/5xx → 500 so Wix retries |
-| 3 | `blocks.children.list` → `dataSources.retrieve` (archive) → `views.create` after the Menu Archives toggle | No | Placeholder line stays in the toggle |
-| 4 | `pages.retrieveMarkdown` + `pages.updateMarkdown` moves the view into the toggle, deletes placeholder | No | View sits below the toggle, placeholder stays |
+| 3 | `pages.retrieveMarkdown` + `pages.updateMarkdown` replaces the pantry placeholder with the filled template | No | Placeholder (lists the ticked boxes) stays in the Pantry toggle |
+| 4 | `blocks.children.list` → `dataSources.retrieve` (archive) → `views.create` after the Menu Archives toggle | No | Placeholder line stays in the toggle |
+| 5 | `pages.retrieveMarkdown` + `pages.updateMarkdown` moves the view into the toggle, deletes placeholder | No | View sits below the toggle, placeholder stays |
 
-- **Once the row exists the endpoint always returns 200** (a Wix retry would duplicate the row). Each call in steps 3-4 is skipped once the request is 20s old. A payload with no form answers returns 400 and creates nothing.
+- **Once the row exists the endpoint always returns 200** (a Wix retry would duplicate the row). Each call in steps 3-5 is skipped once the request is 20s old. A payload with no form answers returns 400 and creates nothing.
+- **Pantry:** the template is Haley's "pantry template for wix" row in Client Rolodex (`PANTRY_TEMPLATE_PAGE_ID`), read on every submission, so her edits apply to the next client with no deploy. Every item is unchecked, then each ticked form box checks the template item with the same name (case/spacing ignored), else its `PANTRY_ALIASES` names (exact name wins, so adding an item named like the form box retires its alias). Any ticked box that isn't in `KITCHEN_TOOLS` counts as a pantry box (a renamed kitchen box or a new consent checkbox would land in the pink note). Ticked kitchen boxes also check any template item with the same name (today Parchment Paper and Tin Foil, in Staples) but never go in the note. A ticked box with no template match goes in a pink note line above the list. The 136+ block list exceeds the 100-children cap of `pages.create`, hence the post-create markdown write; it is one call, so the list lands whole or not at all. Template markdown with any tag other than `<br>`, `<span color/underline>`, `<empty-block/>` is refused (a `<database>`/`<page>` tag in a markdown write moves that block out of the template), as are images, a truncated read, unknown blocks, and a template with no to-dos. Notion's markdown export turns the template's pink highlights into pink text (verified 10/09/26); the note text is kept. Client-typed text (Pantry level) is written as JSON blocks, never through markdown.
 - **Why the move:** the Notion API rejects a linked view whose parent is a toggle (`cannot contain a linked database`); creating at page level then indenting it via the markdown endpoint keeps the same database/view/filter (tested 10/08/26).
 - **Menu Archives view:** live Weekly Schedule Archive (data source `3a7f9bcd-7056-8029-9c24-000b22ab808a`), filter `🧑‍🤝‍🧑 Client Rolodex` contains the new page, sort Cook Date desc, show Client_Date + Menu. Properties referenced by id (`ARCHIVE_PROP`) so renames don't break it. Requires the "Wix Forms (internal)" connection on Weekly Schedule.
 - **Location:** Notion's place property requires lat/lon (address-only writes fail validation). Geocode is accepted only for one distinct match in the typed state (without a zip, Census returned Kansas/Montana matches for a 5th Ave, NY address).
@@ -104,10 +106,10 @@ Two Vercel serverless endpoints receiving Wix form webhooks.
 - Runtime logs (Hobby keeps 1 hour): `vercel logs --no-branch --environment production --since 30m --json --expand` from repo root. Without `--no-branch` the CLI filters to the current git branch and CLI-deployed production logs come back empty (10/08/26)
 
 ### Maintenance Arrays
-Three hardcoded arrays in `api/client-onboarding.js` must match the Wix form exactly:
+Hardcoded arrays in `api/client-onboarding.js` that must match the Wix form exactly:
 - `MENU_OPTIONS` (9 meal descriptions, needed because Wix comma-joins multi-select)
-- `PANTRY_ITEMS` (19 items; form has 27 since 10/08/26. The 8 new ones land in "Other form answers" when checked, until the pantry rework)
 - `KITCHEN_TOOLS` (9 items; "Mixing Bowls" and "Cutting Boards" are separate checkboxes)
+- `PANTRY_ALIASES` (form boxes whose name differs from the template item: Rice Wine Vinegar, Dijon Mustard, Flour, Breadcrumbs, Sugar, Tin Foil). The form's 29 pantry boxes (10/09/26) need no list: a new box named like a template item works as is; otherwise add the item to the template or an alias here.
 
 When Haley updates the Wix form, update these arrays.
 
